@@ -6,6 +6,7 @@ namespace Obuchmann\OdooJsonRpc\Odoo\Mapping;
 
 use Obuchmann\OdooJsonRpc\Attributes\Field;
 use Obuchmann\OdooJsonRpc\Attributes\HasMany;
+use Obuchmann\OdooJsonRpc\Attributes\BelongsTo;
 use Obuchmann\OdooJsonRpc\Attributes\Key;
 use Obuchmann\OdooJsonRpc\Attributes\KeyName;
 use Obuchmann\OdooJsonRpc\Odoo\Casts\CastHandler;
@@ -26,6 +27,16 @@ trait HasFields
 
             foreach ($attributes as $attribute) {
                 $fieldNames[] = $attribute->newInstance()->name ?? $property->name;
+            }
+
+            $hasManyRelations = $property->getAttributes(HasMany::class);
+            foreach ($hasManyRelations as $attribute) {
+                $fieldNames[] = $attribute->newInstance()->name;
+            }
+
+            $belongsToRelations = $property->getAttributes(BelongsTo::class);
+            foreach ($belongsToRelations as $attribute) {
+                $fieldNames[] = $attribute->newInstance()->relation_id;
             }
         }
         return $fieldNames;
@@ -58,7 +69,38 @@ trait HasFields
                     }
                     $instance->{$property->name} = $castsExists ? CastHandler::cast($property, $value) : $value;
                 }
+            }
 
+            $hasManyRelations = $property->getAttributes(HasMany::class);
+            foreach ($hasManyRelations as $attribute) {
+                $field = $attribute->newInstance()->name;
+                $class = $attribute->newInstance()->class;
+                $hasManyClass = new \ReflectionClass($class);
+                $model = $hasManyClass->newInstance();
+
+                if (isset($response->{$field})) {
+                    if ($response->{$field} instanceof OdooModel) {
+                        $instance->{$property->name} = $response->{$field};
+                    } else {
+                        $instance->{$property->name} = $model->read($response->{$field});
+                    }
+                }
+            }
+
+            $belongsToRelations = $property->getAttributes(BelongsTo::class);
+            foreach ($belongsToRelations as $attribute) {
+                $field = $attribute->newInstance()->relation_id;
+                $class = $attribute->newInstance()->class ?? $property->class;
+                $hasManyClass = new \ReflectionClass($class);
+                $model = $hasManyClass->newInstance();
+
+                if (isset($response->{$field}) && $response->{$field}) {
+                    if ($response->{$field} instanceof OdooModel) {
+                        $instance->{$property->name} = $response->{$field};
+                    } else {
+                        $instance->{$property->name} = $model->find($response->{$field}[0]);
+                    }
+                }
             }
         }
 
